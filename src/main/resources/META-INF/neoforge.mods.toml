@@ -1,0 +1,24 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="citizenvote"
+version="${mod_version}"
+displayName="Citizen Vote"
+authors="Ishawakiii"
+description='''/vote en jeu : liens cliquables vers les sites de vote, vérification automatique du vote, récompenses, annonce dans le chat et sur Discord. Mod serveur uniquement (PC et console via Geyser).'''
+
+[[dependencies.citizenvote]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.215,)"
+ordering="NONE"
+side="SERVER"
+
+[[dependencies.citizenvote]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="SERVER"

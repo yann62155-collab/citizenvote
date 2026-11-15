@@ -1,0 +1,177 @@
+package fr.citizen.vote;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * Vérifie auprès de l'API du site si le joueur a voté.
+ * Les adresses d'API reprennent celles du plugin Vote d'Azuriom (CMS français très utilisé).
+ */
+public final class VoteChecker {
+    enum Mode { JSON, BODY_EQUALS, BODY_NOT_TRUE }
+
+    /** {key} = clé/token du site, {ip} = IP du joueur, {name} = pseudo. */
+    record Provider(String id, String api, Mode mode, String path, String expected,
+                    boolean bearer, String claimUrl, String aide) {
+        boolean parIp() { return api.contains("{ip}") && !api.contains("{name}"); }
+    }
+
+    static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(6))
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
+
+    private static final Map<String, Provider> PROVIDERS = new LinkedHashMap<>();
+
+    private static void add(String id, String api, Mode mode, String path, String expected, String aide) {
+        PROVIDERS.put(id, new Provider(id, api, mode, path, expected, false, null, aide));
+    }
+
+    static {
+        add("top-serveurs.net", "https://api.top-serveurs.net/v1/votes/check-ip?server_token={key}&ip={ip}",
+                Mode.JSON, "code", "200", "Token du serveur (panel Top-Serveurs)");
+        add("serveur-prive.net", "https://serveur-prive.net/api/v1/servers/{key}/votes/{ip}",
+                Mode.JSON, "success", "true", "Clé API (panel Serveur-Privé)");
+        add("serveurs-minecraft.org", "https://www.serveurs-minecraft.org/api/is_valid_vote.php?id={key}&ip={ip}&duration=5&format=json",
+                Mode.JSON, "votes", "1", "ID du serveur (dans l'adresse vote.php?id=XXXX)");
+        add("serveur-minecraft.com", "https://serveur-minecraft.com/api/1/vote/{key}/{ip}/json",
+                Mode.JSON, "vote", "1", "ID du serveur (serveur-minecraft.com/XXXX)");
+        add("serveur-minecraft-vote.fr", "https://serveur-minecraft-vote.fr/api/v1/servers/{key}/vote/{ip}",
+                Mode.JSON, "canVote", "false", "ID du serveur (serveur-minecraft-vote.fr/serveur/XXXX)");
+        add("liste-serv-minecraft.fr", "https://liste-serv-minecraft.fr/api/check?server={key}&ip={ip}",
+                Mode.JSON, "status", "200", "ID du serveur (serveur?id=XXXX)");
+        add("serveursminecraft.org", "https://www.serveursminecraft.org/sm_api/peutVoter.php?id={key}&ip={ip}",
+                Mode.BODY_NOT_TRUE, null, null, "ID du serveur (serveursminecraft.org/serveur/XXXX)");
+        add("liste-serveurs.fr", "https://www.liste-serveurs.fr/api/checkVote/{key}/{ip}",
+                Mode.JSON, "success", "true", "ID du serveur (nom.XXXX dans l'adresse)");
+        add("liste-serveurs-minecraft.org", "https://api.liste-serveurs-minecraft.org/vote/vote_verification.php?server_id={key}&ip={ip}&duration=5",
+                Mode.BODY_EQUALS, null, "1", "ID du serveur");
+        add("top-games.net", "https://api.top-games.net/v1/votes/check-ip?server_token={key}&ip={ip}",
+                Mode.JSON, "code", "200", "Token du serveur");
+        add("serveurliste.com", "https://serveurliste.com/api/vote?ip_address={ip}&api_token={key}",
+                Mode.JSON, "data.voted", "true", "Token API");
+        add("serveurly.com", "https://serveurly.com/api/v1/votes/check?token={key}&username={name}&ip={ip}",
+                Mode.JSON, "data.has_voted", "true", "Token");
+        add("minecraft.fr", "https://minecraft.fr/wp-json/serveursmc/v1/votes/{name}?api_key={key}",
+                Mode.JSON, "has_voted", "true", "Clé API (vote au pseudo)");
+        PROVIDERS.put("minecraft-serveurs.com", new Provider("minecraft-serveurs.com",
+                "https://minecraft-serveurs.com/api/v1/vote-check?ip={ip}&name={name}",
+                Mode.JSON, "voted", "true", true, null, "Clé API (Bearer)"));
+        // Sites anglais (vote au pseudo) : la vérification renvoie 1 = voté pas encore récupéré
+        for (String d : List.of("minecraft-mp.com", "minecraftpocket-servers.com")) {
+            PROVIDERS.put(d, new Provider(d, "https://" + d + "/api/?object=votes&element=claim&key={key}&username={name}",
+                    Mode.BODY_EQUALS, null, "1", false,
+                    "https://" + d + "/api/?action=post&object=votes&element=claim&key={key}&username={name}",
+                    "Clé API du serveur (vote au pseudo)"));
+        }
+        PROVIDERS.put("minecraft-server.eu", new Provider("minecraft-server.eu",
+                "https://minecraft-server.eu/api/v1/?object=votes&element=claim&key={key}&username={name}",
+                Mode.BODY_EQUALS, null, "1", false,
+                "https://minecraft-server.eu/api/v1/?action=post&object=votes&element=claim&key={key}&username={name}",
+                "Clé API du serveur (vote au pseudo)"));
+        // Site non listé : remplir apiUrl / jsonChemin / valeurAttendue dans config.json
+        add("personnalise", "", Mode.JSON, null, null, "apiUrl + jsonChemin + valeurAttendue dans config.json");
+    }
+
+    public static Provider provider(String type) {
+        return type == null ? null : PROVIDERS.get(type.toLowerCase());
+    }
+
+    public static List<String> types() { return new ArrayList<>(PROVIDERS.keySet()); }
+
+    public static boolean ipLocale(String ip) {
+        return ip == null || ip.isBlank() || ip.startsWith("127.") || ip.equals("localhost")
+                || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("0:0:0:0") || ip.equals("::1")
+                || ip.matches("^172\\.(1[6-9]|2\\d|3[01])\\..*");
+    }
+
+    private static String fill(String tpl, VoteConfig.Site site, String ip, String name) {
+        return tpl.replace("{key}", enc(site.cle)).replace("{ip}", enc(ip)).replace("{name}", enc(name));
+    }
+
+    private static String enc(String s) { return URLEncoder.encode(s == null ? "" : s, StandardCharsets.UTF_8); }
+
+    /** Vérification asynchrone : ne bloque jamais le serveur. */
+    public static CompletableFuture<Boolean> check(VoteConfig.Site site, String ip, String name) {
+        Provider p = provider(site.type);
+        if (p == null) return CompletableFuture.completedFuture(false);
+        String api = p.id().equals("personnalise") ? site.apiUrl : p.api();
+        String path = p.id().equals("personnalise") ? site.jsonChemin : p.path();
+        String expected = p.id().equals("personnalise") ? site.valeurAttendue : p.expected();
+        if (api == null || api.isBlank()) return CompletableFuture.completedFuture(false);
+        HttpRequest.Builder rb;
+        try {
+            rb = HttpRequest.newBuilder(URI.create(fill(api, site, ip, name)))
+                    .timeout(Duration.ofSeconds(8))
+                    .header("User-Agent", "CitizenVote/1.0 (Minecraft NeoForge)")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .GET();
+        } catch (Exception e) {
+            CitizenVote.LOGGER.warn("[CitizenVote] URL d'API invalide pour {} : {}", site.type, e.getMessage());
+            return CompletableFuture.completedFuture(false);
+        }
+        if (p.bearer()) rb.header("Authorization", "Bearer " + site.cle);
+        final Mode mode = p.mode();
+        return HTTP.sendAsync(rb.build(), HttpResponse.BodyHandlers.ofString())
+                .thenApply(resp -> evaluate(mode, path, expected, resp.statusCode(), resp.body()))
+                .exceptionally(t -> {
+                    CitizenVote.LOGGER.warn("[CitizenVote] API {} injoignable : {}", site.type, t.getMessage());
+                    return false;
+                });
+    }
+
+    static boolean evaluate(Mode mode, String path, String expected, int status, String body) {
+        if (body == null) return false;
+        String b = body.trim();
+        switch (mode) {
+            case BODY_EQUALS:
+                return b.equals(expected);
+            case BODY_NOT_TRUE:
+                return status == 200 && !b.isEmpty() && b.length() < 64 && !b.equalsIgnoreCase("true") && !b.startsWith("<");
+            case JSON:
+            default:
+                try {
+                    JsonElement el = JsonParser.parseString(b);
+                    for (String part : path.split("\\.")) {
+                        if (el == null || !el.isJsonObject()) return false;
+                        JsonObject o = el.getAsJsonObject();
+                        el = o.get(part);
+                    }
+                    if (el == null || el.isJsonNull() || !el.isJsonPrimitive()) return false;
+                    String v = el.getAsString();
+                    if (v.equalsIgnoreCase(expected)) return true;
+                    // 200 vs 200.0, 1 vs "1"
+                    try { return Double.parseDouble(v) == Double.parseDouble(expected); }
+                    catch (NumberFormatException ignored) { return false; }
+                } catch (Exception e) {
+                    return false;
+                }
+        }
+    }
+
+    /** Marque le vote comme récupéré sur les sites qui le demandent (minecraft-mp…). */
+    public static void claim(VoteConfig.Site site, String ip, String name) {
+        Provider p = provider(site.type);
+        if (p == null || p.claimUrl() == null) return;
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(fill(p.claimUrl(), site, ip, name)))
+                    .timeout(Duration.ofSeconds(8))
+                    .POST(HttpRequest.BodyPublishers.noBody()).build();
+            HTTP.sendAsync(req, HttpResponse.BodyHandlers.discarding());
+        } catch (Exception ignored) {}
+    }
+}
