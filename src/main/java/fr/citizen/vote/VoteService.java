@@ -68,7 +68,7 @@ public final class VoteService {
                     .append(Component.literal(s.nom + " ").withStyle(ChatFormatting.YELLOW));
             if (restant <= 0) {
                 auMoinsUn = true;
-                line.append(bouton("[➜ VOTER]", ChatFormatting.GREEN, new ClickEvent(ClickEvent.Action.OPEN_URL, s.url),
+                line.append(bouton("[➜ VOTER]", ChatFormatting.GREEN, new ClickEvent(ClickEvent.Action.OPEN_URL, VoteChecker.lienVote(s, p.getGameProfile().getName())),
                         "Ouvre la page de vote de " + s.nom));
             } else {
                 line.append(Component.literal("✔ voté — à nouveau dans " + duree(restant)).withStyle(ChatFormatting.GRAY));
@@ -76,9 +76,12 @@ public final class VoteService {
             p.sendSystemMessage(line);
             if (restant <= 0) // lien en clair pour les joueurs console (liens non cliquables sur Bedrock)
                 p.sendSystemMessage(Component.literal("    " + s.url).withStyle(ChatFormatting.DARK_GRAY)
-                        .withStyle(st -> st.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, s.url))));
+                        .withStyle(st -> st.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, VoteChecker.lienVote(s, p.getGameProfile().getName())))));
         }
+        prendreReference(p);
         if (auMoinsUn) {
+            p.sendSystemMessage(Component.literal(" Sur le site, écris bien ton pseudo exact : ").withStyle(ChatFormatting.GRAY)
+                    .append(Component.literal(VoteChecker.pseudoNet(p.getGameProfile().getName())).withStyle(ChatFormatting.GOLD)));
             p.sendSystemMessage(Component.literal(" ").append(
                     bouton("[✔ J'ai voté]", ChatFormatting.GOLD, new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/vote verifier"),
                             "Vérifie ton vote et récupère ta récompense"))
@@ -119,23 +122,42 @@ public final class VoteService {
         if (manuel) p.sendSystemMessage(msg("Vérification de ton vote…", ChatFormatting.GRAY));
 
         List<CompletableFuture<Boolean>> futures = new ArrayList<>();
-        for (VoteConfig.Site s : aVerifier) futures.add(VoteChecker.check(s, ip, nom));
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).whenComplete((v, t) -> server.execute(() -> {
+        List<CompletableFuture<Integer>> classements = new ArrayList<>();
+        for (VoteConfig.Site s : aVerifier) {
+            futures.add(VoteChecker.check(s, ip, nom));
+            classements.add(VoteChecker.votesDuMois(s, nom));
+        }
+        List<CompletableFuture<?>> tout = new ArrayList<>(futures);
+        tout.addAll(classements);
+        CompletableFuture.allOf(tout.toArray(new CompletableFuture[0])).whenComplete((v, t) -> server.execute(() -> {
             EN_COURS.remove(id);
             ServerPlayer joueur = server.getPlayerList().getPlayer(id);
             if (joueur == null) return;
             int trouves = 0;
             for (int i = 0; i < aVerifier.size(); i++) {
-                Boolean ok = futures.get(i).getNow(false);
-                if (Boolean.TRUE.equals(ok)) {
+                VoteConfig.Site site = aVerifier.get(i);
+                boolean parIp = Boolean.TRUE.equals(futures.get(i).getNow(false));
+                // Vérification par pseudo : le nombre de votes du mois a augmenté depuis la référence
+                int n = classements.get(i).getNow(-1);
+                boolean parPseudo = false;
+                if (n >= 0) {
+                    Integer base = VoteData.base(id, site.type);
+                    if (base == null || n < base) VoteData.setBase(id, nom, site.type, n); // première fois ou nouveau mois
+                    else if (n > base) parPseudo = true;
+                }
+                if (parIp || parPseudo) {
                     trouves++;
-                    VoteChecker.claim(aVerifier.get(i), ip, nom);
-                    valider(server, joueur, aVerifier.get(i), false);
+                    if (n >= 0) VoteData.setBase(id, nom, site.type, n);
+                    VoteChecker.viderCache(site);
+                    VoteChecker.claim(site, ip, nom);
+                    CitizenVote.LOGGER.info("[CitizenVote] Vote de {} détecté sur {} ({})", nom, site.type,
+                            parIp && parPseudo ? "IP + pseudo" : parIp ? "IP" : "pseudo");
+                    valider(server, joueur, site, false);
                 }
             }
             if (trouves == 0 && manuel) {
-                joueur.sendSystemMessage(msg("Vote pas encore détecté. Termine le vote sur le site (captcha), "
-                        + "puis attends 1 à 2 minutes : la vérification est automatique.", ChatFormatting.YELLOW));
+                joueur.sendSystemMessage(msg("Vote pas encore détecté. Termine le vote sur le site (captcha) avec le pseudo "
+                        + VoteChecker.pseudoNet(nom) + ", puis attends 1 à 2 minutes : la vérification est automatique.", ChatFormatting.YELLOW));
                 if (ipLocale) {
                     boolean parIp = false;
                     for (VoteConfig.Site s : aVerifier) {
@@ -193,6 +215,20 @@ public final class VoteService {
         }
         CitizenVote.LOGGER.info("[CitizenVote] Vote de {} sur {}{}", nom, site.type, parAdmin ? " (validé par un admin)" : "");
         DiscordWebhook.annoncerVote(nom, site, j.ceMois(), j.total, VoteData.totalServeurCeMois(), po, false);
+    }
+
+    /** Mémorise le nombre de votes actuel du joueur sur les sites à classement, pour repérer son prochain vote. */
+    public static void prendreReference(ServerPlayer p) {
+        MinecraftServer server = p.getServer();
+        if (server == null) return;
+        UUID id = p.getUUID();
+        String nom = p.getGameProfile().getName();
+        for (VoteConfig.Site s : VoteConfig.get().sitesPrets()) {
+            if (!VoteChecker.aClassement(s) || VoteData.base(id, s.type) != null) continue;
+            VoteChecker.votesDuMois(s, nom).thenAccept(n -> {
+                if (n >= 0) server.execute(() -> { if (VoteData.base(id, s.type) == null) VoteData.setBase(id, nom, s.type, n); });
+            });
+        }
     }
 
     /** Rappel « tu peux voter » (seulement s'il reste un site disponible). */

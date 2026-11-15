@@ -124,6 +124,25 @@ public final class VoteCommand {
                                                     ok(ctx, c.recompensePO + " PO par vote, " + (c.plafondPOParJour > 0 ? c.plafondPOParJour + " PO max par jour." : "sans limite."));
                                                     return 1;
                                                 }))))
+                        .then(Commands.literal("diagnostic")
+                                .then(Commands.argument("joueur", EntityArgument.player()).executes(ctx -> {
+                                    ServerPlayer p = EntityArgument.getPlayer(ctx, "joueur");
+                                    String ip = p.getIpAddress();
+                                    CommandSourceStack src = ctx.getSource();
+                                    ok(ctx, p.getGameProfile().getName() + " — IP vue par le serveur : " + ip
+                                            + (VoteChecker.ipLocale(ip) ? " (locale : relais/console)" : "") + (ip.contains(":") ? " (IPv6)" : " (IPv4)"));
+                                    for (VoteConfig.Site s : VoteConfig.get().sitesPrets()) {
+                                        VoteChecker.check(s, ip, p.getGameProfile().getName()).thenAcceptBoth(
+                                                VoteChecker.votesDuMois(s, p.getGameProfile().getName()), (parIp, n) ->
+                                                src.getServer().execute(() -> src.sendSystemMessage(VoteService.msg(s.nom + " : vote par IP "
+                                                        + (parIp ? "✔ détecté" : "✖ non détecté")
+                                                        + (VoteChecker.aClassement(s) ? " · votes du mois au pseudo : " + (n < 0 ? "API indisponible" : n)
+                                                        + " (référence " + VoteData.base(p.getUUID(), s.type) + ")" : "")
+                                                        + " · prochain vote possible dans " + VoteService.duree(VoteData.restant(p.getUUID(), s)),
+                                                        ChatFormatting.YELLOW))));
+                                    }
+                                    return 1;
+                                })))
                         .then(Commands.literal("valider")
                                 .then(Commands.argument("joueur", EntityArgument.player())
                                         .then(Commands.argument("type", StringArgumentType.word()).suggests(SITES)
@@ -174,6 +193,7 @@ public final class VoteCommand {
                 "/vote admin discord <url d'un webhook>  — seulement sans le bot Citizen Discord",
                 "/vote admin po <par vote> <max par jour>",
                 "/vote admin valider <joueur> <type>  — valide un vote à la main",
+                "/vote admin diagnostic <joueur>  — pourquoi un vote n'est pas détecté",
                 "/vote admin reset <pseudo>",
                 "/vote admin reload  — recharge config/citizenvote/config.json"};
         s.sendSystemMessage(Component.literal("⚜ Citizen Vote — administration").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));

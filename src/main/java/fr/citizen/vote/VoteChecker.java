@@ -163,6 +163,82 @@ public final class VoteChecker {
         }
     }
 
+    // ------------------------------------------------------------ vérification par pseudo (classement)
+
+    /** Sites qui publient le classement des voteurs du mois par pseudo (le pseudo est demandé au moment du vote). */
+    private static final Map<String, String> CLASSEMENT = Map.of(
+            "top-serveurs.net", "https://api.top-serveurs.net/v1/servers/{key}/players-ranking?type=current",
+            "top-games.net", "https://api.top-games.net/v1/servers/{key}/players-ranking?type=current");
+
+    /** Paramètre ajouté au lien de vote pour pré-remplir le pseudo. */
+    private static final Map<String, String> PARAM_PSEUDO = Map.of(
+            "top-serveurs.net", "pseudo",
+            "top-games.net", "pseudo");
+
+    public static boolean aClassement(VoteConfig.Site site) { return CLASSEMENT.containsKey(site.type.toLowerCase()); }
+
+    /** Lien de vote avec le pseudo pré-rempli quand le site le permet. */
+    public static String lienVote(VoteConfig.Site site, String pseudo) {
+        String param = PARAM_PSEUDO.get(site.type.toLowerCase());
+        if (param == null || site.url == null || site.url.contains(param + "=")) return site.url;
+        return site.url + (site.url.contains("?") ? "&" : "?") + param + "=" + enc(pseudoNet(pseudo));
+    }
+
+    /** Pseudo sans le préfixe des joueurs console (Geyser/ViaProxy). */
+    static String pseudoNet(String p) {
+        String n = p == null ? "" : p;
+        while (!n.isEmpty() && (n.charAt(0) == '.' || n.charAt(0) == '*')) n = n.substring(1);
+        return n;
+    }
+
+    private record Cache(long temps, Map<String, Integer> votes) {}
+    private static final Map<String, Cache> CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Nombre de votes du joueur ce mois sur le site (-1 = inconnu / API indisponible). Cache de 20 s. */
+    public static CompletableFuture<Integer> votesDuMois(VoteConfig.Site site, String pseudo) {
+        String tpl = CLASSEMENT.get(site.type.toLowerCase());
+        if (tpl == null) return CompletableFuture.completedFuture(-1);
+        String cle = pseudoNet(pseudo).toLowerCase();
+        Cache c = CACHE.get(site.type.toLowerCase());
+        if (c != null && System.currentTimeMillis() - c.temps() < 20_000)
+            return CompletableFuture.completedFuture(c.votes().getOrDefault(cle, 0));
+        try {
+            HttpRequest req = HttpRequest.newBuilder(URI.create(tpl.replace("{key}", enc(site.cle))))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("User-Agent", "CitizenVote/1.1 (Minecraft NeoForge)")
+                    .header("Accept", "application/json").GET().build();
+            return HTTP.sendAsync(req, HttpResponse.BodyHandlers.ofString()).thenApply(resp -> {
+                try {
+                    JsonObject o = JsonParser.parseString(resp.body()).getAsJsonObject();
+                    if (!o.has("players") || !o.get("players").isJsonArray()) {
+                        CitizenVote.LOGGER.warn("[CitizenVote] Classement {} illisible ({}) : {}", site.type, resp.statusCode(),
+                                resp.body().length() > 200 ? resp.body().substring(0, 200) : resp.body());
+                        return -1;
+                    }
+                    Map<String, Integer> votes = new java.util.HashMap<>();
+                    for (JsonElement e : o.getAsJsonArray("players")) {
+                        JsonObject pl = e.getAsJsonObject();
+                        if (!pl.has("playername") || !pl.has("votes")) continue;
+                        votes.merge(pseudoNet(pl.get("playername").getAsString()).toLowerCase(), pl.get("votes").getAsInt(), Integer::sum);
+                    }
+                    CACHE.put(site.type.toLowerCase(), new Cache(System.currentTimeMillis(), votes));
+                    return votes.getOrDefault(cle, 0);
+                } catch (Exception ex) {
+                    CitizenVote.LOGGER.warn("[CitizenVote] Classement {} illisible : {}", site.type, ex.getMessage());
+                    return -1;
+                }
+            }).exceptionally(t -> {
+                CitizenVote.LOGGER.warn("[CitizenVote] Classement {} injoignable : {}", site.type, t.getMessage());
+                return -1;
+            });
+        } catch (Exception e) {
+            return CompletableFuture.completedFuture(-1);
+        }
+    }
+
+    /** Oublie le cache (après un vote détecté, pour relire le chiffre exact). */
+    public static void viderCache(VoteConfig.Site site) { CACHE.remove(site.type.toLowerCase()); }
+
     /** Marque le vote comme récupéré sur les sites qui le demandent (minecraft-mp…). */
     public static void claim(VoteConfig.Site site, String ip, String name) {
         Provider p = provider(site.type);

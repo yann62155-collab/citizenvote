@@ -25,6 +25,9 @@ public final class VoteData {
         /** "2026-11-15" -> PO reçus ce jour-là grâce aux votes */
         public Map<String, Integer> poJour = new HashMap<>();
 
+        /** type du site -> nombre de votes du mois vu dans le classement du site (référence pour détecter un nouveau vote) */
+        public Map<String, Integer> baseClassement = new HashMap<>();
+
         public int ceMois() { return mois.getOrDefault(YearMonth.now().toString(), 0); }
     }
 
@@ -102,6 +105,19 @@ public final class VoteData {
         if (donne > 0) j.poJour.merge(jour, donne, Integer::sum);
         save();
         return donne;
+    }
+
+    /** @return la référence enregistrée, ou null s'il n'y en a pas */
+    public static synchronized Integer base(UUID id, String site) {
+        Joueur j = joueurs.get(id.toString());
+        return j == null || j.baseClassement == null ? null : j.baseClassement.get(site.toLowerCase());
+    }
+
+    public static synchronized void setBase(UUID id, String nom, String site, int valeur) {
+        Joueur j = get(id, nom);
+        if (j.baseClassement == null) j.baseClassement = new HashMap<>();
+        Integer old = j.baseClassement.put(site.toLowerCase(), valeur);
+        if (old == null || old != valeur) save();
     }
 
     public static synchronized boolean reset(UUID id) {

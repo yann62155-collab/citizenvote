@@ -36,6 +36,7 @@ public final class VoteEvents {
         if (!(e.getEntity() instanceof ServerPlayer p)) return;
         VoteData.Joueur j = VoteData.find(p.getUUID());
         if (j != null) j.nom = p.getGameProfile().getName();
+        VoteService.prendreReference(p);
         int s = VoteConfig.get().rappelConnexionSecondes;
         if (s > 0) RAPPEL_CONNEXION.put(p.getUUID(), System.currentTimeMillis() + s * 1000L);
     }
