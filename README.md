@@ -6,18 +6,18 @@ Les joueurs n'ont rien à installer : ça marche aussi pour les joueurs console 
 ## Ce que ça fait
 - `/vote` : menu dans le chat avec un bouton **[➜ VOTER]** par site (ouvre la page de vote) + le lien en clair pour les joueurs console.
 - Vérification **automatique** du vote (toutes les 30 s pendant 10 min après `/vote`), ou bouton **[✔ J'ai voté]** (`/vote verifier`).
-- Récompense = commandes lancées par la console (`give {player} ...`, pièces PO de Citizen Economy, etc.).
+- Récompense : **10 PO** en pièces Citizen Economy par vote, **10 PO maximum par jour** et par joueur (`/vote admin po <par vote> <max par jour>`).
 - Annonce dans le chat : « X a voté pour le serveur sur Top-Serveurs ! [Voter aussi] ».
-- **Message Discord** (webhook) : pseudo, tête du joueur, site, ses votes du mois et le total du serveur.
+- **Annonce Discord** dans **#🗳️-vote**, postée par le **bot de Citizen Discord** (même token). Le compte Discord du joueur est mentionné grâce à la whitelist (`/pseudo`). Webhook possible en secours.
 - `/vote top` (classement du mois), `/vote stats`, rappels à la connexion et toutes les 60 min.
 
 ## Mise en route (en jeu, OP)
 1. `/vote admin types` → trouve ton site de vote et la clé qu'il demande.
 2. `/vote admin site ajouter <type> <clé> <url de ta page de vote>`
    ex. `/vote admin site ajouter top-serveurs.net ABCD1234 https://top-serveurs.net/minecraft/vote/citizen`
-3. Discord : Salon → Modifier → Intégrations → Webhooks → Nouveau → Copier l'URL, puis
-   `/vote admin discord https://discord.com/api/webhooks/...` et `/vote admin discord test`.
-4. Récompenses : `config/citizenvote/config.json` → `recompenses`, puis `/vote admin reload`.
+3. Discord : donne au bot l'accès au salon #🗳️-vote (Voir le salon + Envoyer des messages), puis
+   `/vote admin discord statut` et `/vote admin discord test`.
+4. Autre salon : `/vote admin discord salon <id>`.
 
 ## Sites pris en charge
 top-serveurs.net, serveur-prive.net, serveurs-minecraft.org, serveur-minecraft.com, serveur-minecraft-vote.fr,

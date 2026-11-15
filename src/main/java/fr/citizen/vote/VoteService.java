@@ -159,18 +159,25 @@ public final class VoteService {
         String nom = p.getGameProfile().getName();
         VoteData.Joueur j = VoteData.enregistrer(p.getUUID(), nom, site);
 
-        for (String cmd : c.recompenses) {
-            if (cmd == null || cmd.isBlank()) continue;
-            String line = cmd.replace("{player}", nom).replace("{site}", site.nom);
-            if (line.startsWith("/")) line = line.substring(1);
-            try {
-                server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), line);
-            } catch (Exception e) {
-                CitizenVote.LOGGER.warn("[CitizenVote] Commande de récompense en erreur « {} » : {}", line, e.getMessage());
+        // Récompense : PO en pièces Citizen Economy, plafonnés par jour
+        int po = VoteData.accorderPO(p.getUUID(), nom, Math.max(0, c.recompensePO), c.plafondPOParJour);
+        if (po > 0) {
+            Pieces.donner(p, po);
+            for (String cmd : c.recompenses) {
+                if (cmd == null || cmd.isBlank()) continue;
+                String line = cmd.replace("{player}", nom).replace("{site}", site.nom);
+                if (line.startsWith("/")) line = line.substring(1);
+                try {
+                    server.getCommands().performPrefixedCommand(server.createCommandSourceStack().withSuppressedOutput(), line);
+                } catch (Exception e) {
+                    CitizenVote.LOGGER.warn("[CitizenVote] Commande de récompense en erreur « {} » : {}", line, e.getMessage());
+                }
             }
+            p.sendSystemMessage(msg("Merci pour ton vote sur " + site.nom + " ! Tu reçois " + po + " PO.", ChatFormatting.GREEN));
+        } else {
+            p.sendSystemMessage(msg("Merci pour ton vote sur " + site.nom + " ! Tu as déjà reçu tes "
+                    + c.plafondPOParJour + " PO du jour : reviens demain pour une nouvelle récompense.", ChatFormatting.YELLOW));
         }
-
-        p.sendSystemMessage(msg("Merci pour ton vote sur " + site.nom + " ! Ta récompense t'a été remise.", ChatFormatting.GREEN));
         p.playNotifySound(SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 1.0f, 1.0f);
 
         if (c.annonceChat) {
@@ -178,14 +185,14 @@ public final class VoteService {
                     .append(Component.literal(nom).withStyle(ChatFormatting.GOLD))
                     .append(Component.literal(" a voté pour le serveur sur ").withStyle(ChatFormatting.YELLOW))
                     .append(Component.literal(site.nom).withStyle(ChatFormatting.GOLD))
-                    .append(Component.literal(" ! ").withStyle(ChatFormatting.YELLOW))
+                    .append(Component.literal(po > 0 ? " (+" + po + " PO) ! " : " ! ").withStyle(ChatFormatting.YELLOW))
                     .append(bouton("[Voter aussi]", ChatFormatting.GREEN, new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/vote"),
                             "Ouvre le menu de vote"));
             for (ServerPlayer other : server.getPlayerList().getPlayers())
                 if (other != p) other.sendSystemMessage(annonce);
         }
         CitizenVote.LOGGER.info("[CitizenVote] Vote de {} sur {}{}", nom, site.type, parAdmin ? " (validé par un admin)" : "");
-        DiscordWebhook.annoncerVote(nom, site, j.ceMois(), j.total, VoteData.totalServeurCeMois(), false);
+        DiscordWebhook.annoncerVote(nom, site, j.ceMois(), j.total, VoteData.totalServeurCeMois(), po, false);
     }
 
     /** Rappel « tu peux voter » (seulement s'il reste un site disponible). */
@@ -196,7 +203,9 @@ public final class VoteService {
         if (dispo == 0) return;
         p.sendSystemMessage(prefix()
                 .append(Component.literal("Soutiens " + VoteConfig.get().nomServeur + " : " + dispo
-                        + (dispo > 1 ? " votes disponibles" : " vote disponible") + " avec récompense ! ").withStyle(ChatFormatting.YELLOW))
+                        + (dispo > 1 ? " votes disponibles" : " vote disponible")
+                        + (VoteData.poRestantAujourdhui(p.getUUID(), VoteConfig.get().plafondPOParJour) > 0
+                            ? " (" + VoteConfig.get().recompensePO + " PO à gagner) ! " : " ! ")).withStyle(ChatFormatting.YELLOW))
                 .append(bouton("[/vote]", ChatFormatting.GREEN, new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/vote"),
                         "Ouvre le menu de vote")));
     }

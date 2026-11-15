@@ -27,7 +27,17 @@ public final class VoteConfig {
     /** Après /vote, le mod vérifie tout seul toutes les 30 s pendant X minutes. */
     public int verificationAutoMinutes = 10;
 
+    // ---- Récompense en pièces (Citizen Economy) ----
+    /** PO donnés pour un vote (pièces physiques de citizeneconomy). */
+    public int recompensePO = 10;
+    /** Maximum de PO gagnés par les votes, par joueur et par jour (heure de Paris). 0 = pas de limite. */
+    public int plafondPOParJour = 10;
+
     // ---- Discord ----
+    /** Salon où annoncer les votes (#🗳️-vote). Utilise le bot de Citizen Discord (même token). */
+    public String discordSalonId = "1571188304626589816";
+    /** true = poste avec le bot de Citizen Discord ; sinon (ou si le bot est absent) utilise discordWebhook. */
+    public boolean discordViaBotCitizen = true;
     /** URL du webhook Discord (Salon > Modifier > Intégrations > Webhooks > Copier l'URL). Vide = désactivé. */
     public String discordWebhook = "";
     public String discordNom = "Citizen • Votes";
@@ -36,9 +46,10 @@ public final class VoteConfig {
     public int discordCouleur = 0xC9A227;
 
     // ---- Récompenses : commandes lancées par la console, {player} = pseudo, {site} = nom du site ----
-    public List<String> recompenses = new ArrayList<>(List.of(
-            "give {player} minecraft:experience_bottle 8"
-    ));
+    /** Commandes en plus des PO (lancées seulement quand des PO sont donnés). */
+    public List<String> recompenses = new ArrayList<>();
+
+    public int versionConfig = 0;
 
     // ---- Sites de vote ----
     public List<Site> sites = new ArrayList<>(List.of(
@@ -103,9 +114,15 @@ public final class VoteConfig {
                 if (c != null) {
                     if (c.sites == null) c.sites = new ArrayList<>();
                     if (c.recompenses == null) c.recompenses = new ArrayList<>();
+                    if (c.versionConfig < 2) { // v1 : la récompense par défaut était 8 fioles d'XP
+                        c.recompenses.remove("give {player} minecraft:experience_bottle 8");
+                        if (c.discordSalonId == null || c.discordSalonId.isBlank()) c.discordSalonId = "1571188304626589816";
+                        c.versionConfig = 2;
+                    }
                     instance = c;
                 }
             }
+            instance.versionConfig = 2;
             save(); // écrit les nouvelles options éventuelles
         } catch (Exception e) {
             CitizenVote.LOGGER.error("[CitizenVote] config.json illisible, valeurs par défaut utilisées", e);

@@ -25,7 +25,7 @@ public final class VoteEvents {
         VoteData.load();
         int prets = VoteConfig.get().sitesPrets().size();
         CitizenVote.LOGGER.info("[CitizenVote] Prêt : {} site(s) de vote configuré(s), Discord {}", prets,
-                VoteConfig.get().discordWebhook.isBlank() ? "désactivé" : "activé");
+                DiscordWebhook.actif() ? (DiscordWebhook.botDisponible() ? "bot Citizen Discord" : "webhook") : "désactivé");
     }
 
     public static void onServerStopping(ServerStoppingEvent e) {

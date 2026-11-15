@@ -22,6 +22,9 @@ public final class VoteData {
         /** type du site -> date du dernier vote (ms) */
         public Map<String, Long> dernierVote = new HashMap<>();
 
+        /** "2026-11-15" -> PO reçus ce jour-là grâce aux votes */
+        public Map<String, Integer> poJour = new HashMap<>();
+
         public int ceMois() { return mois.getOrDefault(YearMonth.now().toString(), 0); }
     }
 
@@ -75,6 +78,30 @@ public final class VoteData {
         j.dernierVote.put(site.type.toLowerCase(), System.currentTimeMillis());
         save();
         return j;
+    }
+
+    public static String aujourdhui() {
+        return java.time.LocalDate.now(java.time.ZoneId.of("Europe/Paris")).toString();
+    }
+
+    /** PO restant à gagner aujourd'hui. */
+    public static synchronized int poRestantAujourdhui(UUID id, int plafond) {
+        if (plafond <= 0) return Integer.MAX_VALUE;
+        Joueur j = joueurs.get(id.toString());
+        int deja = j == null || j.poJour == null ? 0 : j.poJour.getOrDefault(aujourdhui(), 0);
+        return Math.max(0, plafond - deja);
+    }
+
+    /** Réserve les PO du vote en respectant le plafond du jour. @return PO à donner (0 si plafond atteint) */
+    public static synchronized int accorderPO(UUID id, String nom, int voulu, int plafond) {
+        Joueur j = get(id, nom);
+        if (j.poJour == null) j.poJour = new HashMap<>();
+        String jour = aujourdhui();
+        j.poJour.keySet().removeIf(k -> !k.equals(jour)); // on ne garde que le jour en cours
+        int donne = Math.max(0, Math.min(voulu, poRestantAujourdhui(id, plafond)));
+        if (donne > 0) j.poJour.merge(jour, donne, Integer::sum);
+        save();
+        return donne;
     }
 
     public static synchronized boolean reset(UUID id) {

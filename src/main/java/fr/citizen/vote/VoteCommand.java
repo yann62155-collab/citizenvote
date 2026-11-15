@@ -49,8 +49,28 @@ public final class VoteCommand {
                         .then(Commands.literal("types").executes(ctx -> types(ctx.getSource())))
                         .then(Commands.literal("discord")
                                 .then(Commands.literal("test").executes(VoteCommand::discordTest))
+                                .then(Commands.literal("salon")
+                                        .then(Commands.argument("id", StringArgumentType.word()).executes(ctx -> {
+                                            String id = StringArgumentType.getString(ctx, "id");
+                                            if (!id.matches("\\d{15,25}")) { err(ctx, "ID de salon invalide (clic droit sur le salon → Copier l'identifiant)."); return 0; }
+                                            VoteConfig.get().discordSalonId = id;
+                                            VoteConfig.get().discordViaBotCitizen = true;
+                                            VoteConfig.save();
+                                            ok(ctx, "Salon d'annonce enregistré. Teste avec /vote admin discord test");
+                                            return 1;
+                                        })))
+                                .then(Commands.literal("statut").executes(ctx -> {
+                                    VoteConfig c = VoteConfig.get();
+                                    ok(ctx, "Bot Citizen Discord : " + (DiscordWebhook.tokenBotCitizen() != null ? "token trouvé ✔" : "introuvable ✖ (Citizen Discord installé et configuré ?)"));
+                                    ok(ctx, "Salon : " + c.discordSalonId + (c.discordViaBotCitizen ? "" : " (désactivé)"));
+                                    ok(ctx, "Webhook de secours : " + (c.discordWebhook.isBlank() ? "aucun" : "oui"));
+                                    ok(ctx, "Récompense : " + c.recompensePO + " PO par vote, " + (c.plafondPOParJour > 0 ? c.plafondPOParJour + " PO max par jour" : "sans limite")
+                                            + (Pieces.economieDisponible() ? "" : " — ✖ Citizen Economy absent !"));
+                                    return 1;
+                                }))
                                 .then(Commands.literal("off").executes(ctx -> {
                                     VoteConfig.get().discordWebhook = "";
+                                    VoteConfig.get().discordViaBotCitizen = false;
                                     VoteConfig.save();
                                     ok(ctx, "Annonces Discord désactivées.");
                                     return 1;
@@ -92,6 +112,17 @@ public final class VoteCommand {
                                                     VoteConfig.save();
                                                     if (r) ok(ctx, "Site " + t + " retiré."); else err(ctx, "Site inconnu.");
                                                     return r ? 1 : 0;
+                                                }))))
+                        .then(Commands.literal("po")
+                                .then(Commands.argument("parVote", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 100000))
+                                        .then(Commands.argument("maxParJour", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 100000))
+                                                .executes(ctx -> {
+                                                    VoteConfig c = VoteConfig.get();
+                                                    c.recompensePO = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "parVote");
+                                                    c.plafondPOParJour = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "maxParJour");
+                                                    VoteConfig.save();
+                                                    ok(ctx, c.recompensePO + " PO par vote, " + (c.plafondPOParJour > 0 ? c.plafondPOParJour + " PO max par jour." : "sans limite."));
+                                                    return 1;
                                                 }))))
                         .then(Commands.literal("valider")
                                 .then(Commands.argument("joueur", EntityArgument.player())
@@ -139,7 +170,9 @@ public final class VoteCommand {
                 "/vote admin site ajouter <type> <clé> <url de la page de vote>",
                 "/vote admin site liste | retirer <type> | cooldown <type> <minutes>",
                 "/vote admin types  — sites pris en charge et clé à fournir",
-                "/vote admin discord <url du webhook> | test | off",
+                "/vote admin discord statut | test | salon <id> | off",
+                "/vote admin discord <url d'un webhook>  — seulement sans le bot Citizen Discord",
+                "/vote admin po <par vote> <max par jour>",
                 "/vote admin valider <joueur> <type>  — valide un vote à la main",
                 "/vote admin reset <pseudo>",
                 "/vote admin reload  — recharge config/citizenvote/config.json"};
@@ -204,14 +237,14 @@ public final class VoteCommand {
 
     private static int discordTest(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
-        if (VoteConfig.get().discordWebhook.isBlank()) { err(ctx, "Aucun webhook. /vote admin discord <url>"); return 0; }
+        if (!DiscordWebhook.actif()) { err(ctx, "Discord non configuré : il faut Citizen Discord (token du bot) + /vote admin discord salon <id>, ou un webhook."); return 0; }
         String nom = src.getPlayer() != null ? src.getPlayer().getGameProfile().getName() : "Ishawakiii";
         VoteConfig.Site s = VoteConfig.get().sites.isEmpty() ? new VoteConfig.Site("test", "Site de test", "", "", 0)
                 : VoteConfig.get().sites.get(0);
-        DiscordWebhook.annoncerVote(nom, s, 1, 1, VoteData.totalServeurCeMois(), true).thenAccept(code ->
+        DiscordWebhook.annoncerVote(nom, s, 1, 1, VoteData.totalServeurCeMois(), VoteConfig.get().recompensePO, true).thenAccept(code ->
                 src.getServer().execute(() -> {
                     if (code >= 200 && code < 300) src.sendSystemMessage(VoteService.msg("Message de test envoyé sur Discord ✔", ChatFormatting.GREEN));
-                    else src.sendSystemMessage(VoteService.msg("Échec de l'envoi Discord (code " + code + "). Vérifie l'URL du webhook.", ChatFormatting.RED));
+                    else src.sendSystemMessage(VoteService.msg("Échec de l'envoi Discord (code " + code + ")" + (code == 403 ? " : le bot n'a pas accès au salon." : code == 404 ? " : salon introuvable." : "."), ChatFormatting.RED));
                 }));
         return 1;
     }
