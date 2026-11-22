@@ -288,7 +288,7 @@ public final class VoteCommand {
 
     // ---------- Utilitaires ----------
     private static String nomJoli(String type, String url) {
-        if (type.equals("personnalise")) {
+        if (type.equals("personnalise") || type.equals("lien")) {
             try { return java.net.URI.create(url).getHost().replaceFirst("^www\\.", ""); } catch (Exception e) { return "Site de vote"; }
         }
         return switch (type) {

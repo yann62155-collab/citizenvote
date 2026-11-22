@@ -86,6 +86,9 @@ public final class VoteConfig {
             this.cooldownMinutes = cooldownMinutes;
         }
 
+        /** false pour le type "lien" : affiché dans /vote, jamais vérifié ni récompensé. */
+        public boolean verifiable() { return !"lien".equalsIgnoreCase(type); }
+
         public String id() { return id == null || id.isBlank() ? type : id; }
 
         public boolean pret() {

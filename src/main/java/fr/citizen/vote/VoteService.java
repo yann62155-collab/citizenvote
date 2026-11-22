@@ -63,6 +63,15 @@ public final class VoteService {
         }
         boolean auMoinsUn = false;
         for (VoteConfig.Site s : sites) {
+            if (!s.verifiable()) {
+                p.sendSystemMessage(Component.literal(" ✦ ").withStyle(ChatFormatting.GOLD)
+                        .append(Component.literal(s.nom + " ").withStyle(ChatFormatting.YELLOW))
+                        .append(bouton("[➜ VOTER]", ChatFormatting.AQUA, new ClickEvent(ClickEvent.Action.OPEN_URL, s.url),
+                                "Ouvre la page de vote de " + s.nom))
+                        .append(Component.literal(" pour soutenir le serveur (sans récompense)").withStyle(ChatFormatting.GRAY)));
+                p.sendSystemMessage(Component.literal("    " + s.url).withStyle(ChatFormatting.DARK_GRAY));
+                continue;
+            }
             long restant = VoteData.restant(p.getUUID(), s);
             MutableComponent line = Component.literal(" ✦ ").withStyle(ChatFormatting.GOLD)
                     .append(Component.literal(s.nom + " ").withStyle(ChatFormatting.YELLOW));
@@ -109,7 +118,7 @@ public final class VoteService {
         }
         List<VoteConfig.Site> aVerifier = new ArrayList<>();
         for (VoteConfig.Site s : VoteConfig.get().sitesPrets())
-            if (VoteData.restant(id, s) <= 0) aVerifier.add(s);
+            if (s.verifiable() && VoteData.restant(id, s) <= 0) aVerifier.add(s);
         if (aVerifier.isEmpty()) {
             EN_COURS.remove(id);
             EN_ATTENTE.remove(id);
@@ -170,7 +179,7 @@ public final class VoteService {
             }
             boolean resteDispo = false;
             for (VoteConfig.Site s : VoteConfig.get().sitesPrets())
-                if (VoteData.restant(id, s) <= 0) resteDispo = true;
+                if (s.verifiable() && VoteData.restant(id, s) <= 0) resteDispo = true;
             if (!resteDispo) EN_ATTENTE.remove(id);
         }));
     }
@@ -235,7 +244,7 @@ public final class VoteService {
     public static void rappel(ServerPlayer p) {
         int dispo = 0;
         for (VoteConfig.Site s : VoteConfig.get().sitesPrets())
-            if (VoteData.restant(p.getUUID(), s) <= 0) dispo++;
+            if (s.verifiable() && VoteData.restant(p.getUUID(), s) <= 0) dispo++;
         if (dispo == 0) return;
         p.sendSystemMessage(prefix()
                 .append(Component.literal("Soutiens " + VoteConfig.get().nomServeur + " : " + dispo

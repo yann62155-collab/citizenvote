@@ -88,6 +88,8 @@ public final class VoteChecker {
                 "https://cubevote.net/api/v1/vote?username={name}",
                 Mode.JSON, "hasPendingVote", "true", true,
                 "https://cubevote.net/api/v1/vote/claim", "Clé API (page de gestion du serveur sur cubevote.net/dashboard)"));
+        // Site sans API : simple bouton de vote dans /vote, sans vérification ni récompense
+        add("lien", "", Mode.JSON, null, null, "Aucune vérification : bouton de vote seulement (mets - comme clé)");
         // Site non listé : remplir apiUrl / jsonChemin / valeurAttendue dans config.json
         add("personnalise", "", Mode.JSON, null, null, "apiUrl + jsonChemin + valeurAttendue dans config.json");
     }
