@@ -58,7 +58,9 @@ public final class VoteConfig {
     ));
 
     public static final class Site {
-        /** Identifiant du site (voir /vote admin types). */
+        /** Identifiant unique du site dans la config (par défaut = type ; ex. "personnalise-2"). */
+        public String id = "";
+        /** Type du site (voir /vote admin types). */
         public String type;
         /** Nom affiché en jeu et sur Discord. */
         public String nom;
@@ -84,6 +86,8 @@ public final class VoteConfig {
             this.cooldownMinutes = cooldownMinutes;
         }
 
+        public String id() { return id == null || id.isBlank() ? type : id; }
+
         public boolean pret() {
             return actif && url != null && !url.isBlank() && cle != null && !cle.isBlank()
                     && VoteChecker.provider(type) != null;
@@ -93,6 +97,7 @@ public final class VoteConfig {
     public static VoteConfig get() { return instance; }
 
     public Site site(String type) {
+        for (Site s : sites) if (s.id().equalsIgnoreCase(type)) return s;
         for (Site s : sites) if (s.type.equalsIgnoreCase(type)) return s;
         return null;
     }

@@ -68,7 +68,7 @@ public final class VoteData {
     public static synchronized long restant(UUID id, VoteConfig.Site site) {
         Joueur j = joueurs.get(id.toString());
         if (j == null) return 0;
-        Long last = j.dernierVote.get(site.type.toLowerCase());
+        Long last = j.dernierVote.get(site.id().toLowerCase());
         if (last == null) return 0;
         long fin = last + site.cooldownMinutes * 60_000L;
         return Math.max(0, fin - System.currentTimeMillis());
@@ -78,7 +78,7 @@ public final class VoteData {
         Joueur j = get(id, nom);
         j.total++;
         j.mois.merge(YearMonth.now().toString(), 1, Integer::sum);
-        j.dernierVote.put(site.type.toLowerCase(), System.currentTimeMillis());
+        j.dernierVote.put(site.id().toLowerCase(), System.currentTimeMillis());
         save();
         return j;
     }

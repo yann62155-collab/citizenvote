@@ -199,7 +199,7 @@ public final class VoteChecker {
         String tpl = CLASSEMENT.get(site.type.toLowerCase());
         if (tpl == null) return CompletableFuture.completedFuture(-1);
         String cle = pseudoNet(pseudo).toLowerCase();
-        Cache c = CACHE.get(site.type.toLowerCase());
+        Cache c = CACHE.get(site.id().toLowerCase());
         if (c != null && System.currentTimeMillis() - c.temps() < 20_000)
             return CompletableFuture.completedFuture(c.votes().getOrDefault(cle, 0));
         try {
@@ -221,7 +221,7 @@ public final class VoteChecker {
                         if (!pl.has("playername") || !pl.has("votes")) continue;
                         votes.merge(pseudoNet(pl.get("playername").getAsString()).toLowerCase(), pl.get("votes").getAsInt(), Integer::sum);
                     }
-                    CACHE.put(site.type.toLowerCase(), new Cache(System.currentTimeMillis(), votes));
+                    CACHE.put(site.id().toLowerCase(), new Cache(System.currentTimeMillis(), votes));
                     return votes.getOrDefault(cle, 0);
                 } catch (Exception ex) {
                     CitizenVote.LOGGER.warn("[CitizenVote] Classement {} illisible : {}", site.type, ex.getMessage());
@@ -237,7 +237,7 @@ public final class VoteChecker {
     }
 
     /** Oublie le cache (après un vote détecté, pour relire le chiffre exact). */
-    public static void viderCache(VoteConfig.Site site) { CACHE.remove(site.type.toLowerCase()); }
+    public static void viderCache(VoteConfig.Site site) { CACHE.remove(site.id().toLowerCase()); }
 
     /** Marque le vote comme récupéré sur les sites qui le demandent (minecraft-mp…). */
     public static void claim(VoteConfig.Site site, String ip, String name) {

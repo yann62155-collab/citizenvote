@@ -28,7 +28,7 @@ public final class VoteCommand {
             (ctx, b) -> SharedSuggestionProvider.suggest(VoteChecker.types(), b);
     private static final SuggestionProvider<CommandSourceStack> SITES = (ctx, b) -> {
         List<String> l = new ArrayList<>();
-        for (VoteConfig.Site s : VoteConfig.get().sites) l.add(s.type);
+        for (VoteConfig.Site s : VoteConfig.get().sites) l.add(s.id());
         return SharedSuggestionProvider.suggest(l, b);
     };
 
@@ -104,11 +104,21 @@ public final class VoteCommand {
                                                             ok(ctx, s.nom + " : un vote toutes les " + s.cooldownMinutes + " min.");
                                                             return 1;
                                                         }))))
+                                .then(Commands.literal("nom")
+                                        .then(Commands.argument("type", StringArgumentType.word()).suggests(SITES)
+                                                .then(Commands.argument("nom", StringArgumentType.greedyString()).executes(ctx -> {
+                                                    VoteConfig.Site s = VoteConfig.get().site(StringArgumentType.getString(ctx, "type"));
+                                                    if (s == null) { err(ctx, "Site inconnu (/vote admin site liste)."); return 0; }
+                                                    s.nom = StringArgumentType.getString(ctx, "nom").trim();
+                                                    VoteConfig.save();
+                                                    ok(ctx, "Nom affiché : " + s.nom);
+                                                    return 1;
+                                                }))))
                                 .then(Commands.literal("retirer")
                                         .then(Commands.argument("type", StringArgumentType.word()).suggests(SITES)
                                                 .executes(ctx -> {
                                                     String t = StringArgumentType.getString(ctx, "type");
-                                                    boolean r = VoteConfig.get().sites.removeIf(s -> s.type.equalsIgnoreCase(t));
+                                                    boolean r = VoteConfig.get().sites.removeIf(s -> s.id().equalsIgnoreCase(t));
                                                     VoteConfig.save();
                                                     if (r) ok(ctx, "Site " + t + " retiré."); else err(ctx, "Site inconnu.");
                                                     return r ? 1 : 0;
@@ -137,7 +147,7 @@ public final class VoteCommand {
                                                 src.getServer().execute(() -> src.sendSystemMessage(VoteService.msg(s.nom + " : vote par IP "
                                                         + (parIp ? "✔ détecté" : "✖ non détecté")
                                                         + (VoteChecker.aClassement(s) ? " · votes du mois au pseudo : " + (n < 0 ? "API indisponible" : n)
-                                                        + " (référence " + VoteData.base(p.getUUID(), s.type) + ")" : "")
+                                                        + " (référence " + VoteData.base(p.getUUID(), s.id()) + ")" : "")
                                                         + " · prochain vote possible dans " + VoteService.duree(VoteData.restant(p.getUUID(), s)),
                                                         ChatFormatting.YELLOW))));
                                     }
@@ -187,7 +197,7 @@ public final class VoteCommand {
     private static int aide(CommandSourceStack s) {
         String[] lignes = {
                 "/vote admin site ajouter <type> <clé> <url de la page de vote>",
-                "/vote admin site liste | retirer <type> | cooldown <type> <minutes>",
+                "/vote admin site liste | retirer <id> | cooldown <id> <minutes> | nom <id> <nom>",
                 "/vote admin types  — sites pris en charge et clé à fournir",
                 "/vote admin discord statut | test | salon <id> | off",
                 "/vote admin discord <url d'un webhook>  — seulement sans le bot Citizen Discord",
@@ -218,7 +228,7 @@ public final class VoteCommand {
             String etat = site.pret() ? "✔ prêt" : (VoteChecker.provider(site.type) == null ? "✖ type inconnu"
                     : (site.cle == null || site.cle.isBlank()) ? "✖ clé manquante"
                     : (site.url == null || site.url.isBlank()) ? "✖ url manquante" : "✖ désactivé");
-            s.sendSystemMessage(Component.literal(" • " + site.nom + " (" + site.type + ") ").withStyle(ChatFormatting.YELLOW)
+            s.sendSystemMessage(Component.literal(" • " + site.nom + " [" + site.id() + (site.id().equals(site.type) ? "" : ", " + site.type) + "] ").withStyle(ChatFormatting.YELLOW)
                     .append(Component.literal(etat + " — " + site.cooldownMinutes + " min").withStyle(site.pret() ? ChatFormatting.GREEN : ChatFormatting.RED)));
         }
         return 1;
@@ -232,9 +242,15 @@ public final class VoteCommand {
         String url = StringArgumentType.getString(ctx, "url").trim();
         if (!url.startsWith("http")) { err(ctx, "L'URL de la page de vote doit commencer par https://"); return 0; }
         VoteConfig c = VoteConfig.get();
-        VoteConfig.Site s = c.site(type);
+        // Même site = même type ET même clé (ou même lien) : on le met à jour. Sinon, c'est un nouveau site.
+        VoteConfig.Site s = null;
+        for (VoteConfig.Site x : c.sites)
+            if (x.type.equalsIgnoreCase(type) && (cle.equals(x.cle) || url.equalsIgnoreCase(x.url))) s = x;
         if (s == null) {
-            s = new VoteConfig.Site(type, nomJoli(type), url, cle, defautCooldown(type));
+            s = new VoteConfig.Site(type, nomJoli(type, url), url, cle, defautCooldown(type));
+            String id = type;
+            for (int n = 2; c.site(id) != null && c.site(id).id().equalsIgnoreCase(id); n++) id = type + "-" + n;
+            s.id = id;
             c.sites.add(s);
         } else {
             s.cle = cle;
@@ -242,7 +258,8 @@ public final class VoteCommand {
             s.actif = true;
         }
         VoteConfig.save();
-        ok(ctx, s.nom + " configuré (" + s.cooldownMinutes + " min entre deux votes). Les joueurs le voient dans /vote.");
+        ok(ctx, s.nom + " configuré [" + s.id() + "] (" + s.cooldownMinutes + " min entre deux votes). Les joueurs le voient dans /vote.");
+        ok(ctx, "Sites actuels : " + c.sites.size() + " (/vote admin site liste). Pour changer le nom affiché : /vote admin site nom " + s.id() + " <nom>");
         return 1;
     }
 
@@ -270,7 +287,10 @@ public final class VoteCommand {
     }
 
     // ---------- Utilitaires ----------
-    private static String nomJoli(String type) {
+    private static String nomJoli(String type, String url) {
+        if (type.equals("personnalise")) {
+            try { return java.net.URI.create(url).getHost().replaceFirst("^www\\.", ""); } catch (Exception e) { return "Site de vote"; }
+        }
         return switch (type) {
             case "top-serveurs.net" -> "Top-Serveurs";
             case "serveur-prive.net" -> "Serveur-Privé";

@@ -141,13 +141,13 @@ public final class VoteService {
                 int n = classements.get(i).getNow(-1);
                 boolean parPseudo = false;
                 if (n >= 0) {
-                    Integer base = VoteData.base(id, site.type);
-                    if (base == null || n < base) VoteData.setBase(id, nom, site.type, n); // première fois ou nouveau mois
+                    Integer base = VoteData.base(id, site.id());
+                    if (base == null || n < base) VoteData.setBase(id, nom, site.id(), n); // première fois ou nouveau mois
                     else if (n > base) parPseudo = true;
                 }
                 if (parIp || parPseudo) {
                     trouves++;
-                    if (n >= 0) VoteData.setBase(id, nom, site.type, n);
+                    if (n >= 0) VoteData.setBase(id, nom, site.id(), n);
                     VoteChecker.viderCache(site);
                     VoteChecker.claim(site, ip, nom);
                     CitizenVote.LOGGER.info("[CitizenVote] Vote de {} détecté sur {} ({})", nom, site.type,
@@ -224,9 +224,9 @@ public final class VoteService {
         UUID id = p.getUUID();
         String nom = p.getGameProfile().getName();
         for (VoteConfig.Site s : VoteConfig.get().sitesPrets()) {
-            if (!VoteChecker.aClassement(s) || VoteData.base(id, s.type) != null) continue;
+            if (!VoteChecker.aClassement(s) || VoteData.base(id, s.id()) != null) continue;
             VoteChecker.votesDuMois(s, nom).thenAccept(n -> {
-                if (n >= 0) server.execute(() -> { if (VoteData.base(id, s.type) == null) VoteData.setBase(id, nom, s.type, n); });
+                if (n >= 0) server.execute(() -> { if (VoteData.base(id, s.id()) == null) VoteData.setBase(id, nom, s.id(), n); });
             });
         }
     }
