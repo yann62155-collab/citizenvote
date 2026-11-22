@@ -298,6 +298,7 @@ public final class VoteCommand {
             case "serveur-minecraft.com" -> "Serveur-Minecraft.com";
             case "serveur-minecraft-vote.fr" -> "Serveur-Minecraft-Vote";
             case "minecraft-mp.com" -> "Minecraft-MP";
+            case "cubevote.net" -> "CubeVote";
             case "personnalise" -> "Site de vote";
             default -> type;
         };
@@ -308,6 +309,7 @@ public final class VoteCommand {
             case "serveur-prive.net" -> 90;
             case "top-serveurs.net", "top-games.net" -> 120;
             case "minecraft-mp.com", "minecraft-server.eu", "minecraftpocket-servers.com", "minecraft.fr" -> 1440;
+            case "cubevote.net" -> 120; // CubeVote ne garde que les votes en attente : un vote = une récompense
             default -> 180;
         };
     }

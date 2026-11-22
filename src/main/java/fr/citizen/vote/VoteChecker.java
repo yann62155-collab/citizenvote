@@ -83,6 +83,11 @@ public final class VoteChecker {
                 Mode.BODY_EQUALS, null, "1", false,
                 "https://minecraft-server.eu/api/v1/?action=post&object=votes&element=claim&key={key}&username={name}",
                 "Clé API du serveur (vote au pseudo)"));
+        // CubeVote : vérification au pseudo, votes "en attente" puis marqués comme récompensés (claim)
+        PROVIDERS.put("cubevote.net", new Provider("cubevote.net",
+                "https://cubevote.net/api/v1/vote?username={name}",
+                Mode.JSON, "hasPendingVote", "true", true,
+                "https://cubevote.net/api/v1/vote/claim", "Clé API (page de gestion du serveur sur cubevote.net/dashboard)"));
         // Site non listé : remplir apiUrl / jsonChemin / valeurAttendue dans config.json
         add("personnalise", "", Mode.JSON, null, null, "apiUrl + jsonChemin + valeurAttendue dans config.json");
     }
@@ -100,7 +105,7 @@ public final class VoteChecker {
     }
 
     private static String fill(String tpl, VoteConfig.Site site, String ip, String name) {
-        return tpl.replace("{key}", enc(site.cle)).replace("{ip}", enc(ip)).replace("{name}", enc(name));
+        return tpl.replace("{key}", enc(site.cle)).replace("{ip}", enc(ip)).replace("{name}", enc(pseudoNet(name)));
     }
 
     private static String enc(String s) { return URLEncoder.encode(s == null ? "" : s, StandardCharsets.UTF_8); }
@@ -243,6 +248,22 @@ public final class VoteChecker {
     public static void claim(VoteConfig.Site site, String ip, String name) {
         Provider p = provider(site.type);
         if (p == null || p.claimUrl() == null) return;
+        if (p.id().equals("cubevote.net")) {
+            try {
+                JsonObject body = new JsonObject();
+                body.addProperty("username", pseudoNet(name));
+                HttpRequest req = HttpRequest.newBuilder(URI.create(p.claimUrl()))
+                        .timeout(Duration.ofSeconds(8))
+                        .header("Authorization", "Bearer " + site.cle)
+                        .header("Content-Type", "application/json")
+                        .header("User-Agent", "CitizenVote/1.4 (Minecraft NeoForge)")
+                        .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8)).build();
+                HTTP.sendAsync(req, HttpResponse.BodyHandlers.ofString()).thenAccept(r -> {
+                    if (r.statusCode() >= 300) CitizenVote.LOGGER.warn("[CitizenVote] CubeVote : claim refusé ({}) {}", r.statusCode(), r.body());
+                });
+            } catch (Exception ignored) {}
+            return;
+        }
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(fill(p.claimUrl(), site, ip, name)))
                     .timeout(Duration.ofSeconds(8))

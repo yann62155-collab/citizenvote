@@ -23,7 +23,7 @@ Les joueurs n'ont rien à installer : ça marche aussi pour les joueurs console 
 top-serveurs.net, serveur-prive.net, serveurs-minecraft.org, serveur-minecraft.com, serveur-minecraft-vote.fr,
 liste-serv-minecraft.fr, serveursminecraft.org, liste-serveurs.fr, liste-serveurs-minecraft.org, top-games.net,
 serveurliste.com, serveurly.com, minecraft.fr, minecraft-serveurs.com, minecraft-mp.com, minecraftpocket-servers.com,
-minecraft-server.eu, + `personnalise` (apiUrl / jsonChemin / valeurAttendue dans config.json).
+minecraft-server.eu, cubevote.net, + `personnalise` (apiUrl / jsonChemin / valeurAttendue dans config.json).
 
 ## À savoir
 - Le vote lui-même se fait sur le site (captcha obligatoire) : le mod ouvre la page et détecte le vote.
